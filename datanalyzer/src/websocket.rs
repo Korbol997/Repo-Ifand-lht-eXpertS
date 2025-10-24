@@ -8,6 +8,8 @@
 //! - Configurable throttling to limit notification frequency
 //! - Statistics tracking for skipped notifications
 //! - Automatic reconnection handling via stream closure detection
+//! - Exponential backoff reconnection strategy
+//! - Graceful degradation for problematic pools
 //!
 //! # Example Usage
 //!
@@ -35,6 +37,15 @@
 //! // Listen to multiple pools
 //! let pools = vec![Pubkey::new_unique(), Pubkey::new_unique()];
 //! manager.listen(&pools, callback, 30).await?;
+//!
+//! // If connection is lost, reconnect with exponential backoff
+//! if !manager.is_connected() {
+//!     manager.reconnect_loop(Some(5)).await?;  // Max 5 attempts
+//! }
+//!
+//! // Manually retry problematic pools
+//! let recovered = manager.retry_problematic_pools().await;
+//! println!("Recovered {} problematic pools", recovered);
 //!
 //! // Log statistics about throttled notifications
 //! manager.log_skipped_stats().await;
