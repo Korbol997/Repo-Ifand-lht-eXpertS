@@ -25,6 +25,13 @@ const MAX_REASONABLE_LIQUIDITY_USD: f64 = 1_000_000_000.0;
 /// * `token_price` - Price of the token in USD
 /// * `token_decimals` - Number of decimal places for the token (e.g., 6 for USDC, 9 for most tokens)
 ///
+/// # Note on SOL Decimals
+///
+/// SOL always has 9 decimals (hardcoded as `SOL_DECIMALS` constant). This is a fixed
+/// property of the Solana blockchain and never changes, so it doesn't need to be
+/// parameterized. The `token_decimals` parameter is required because different SPL tokens
+/// can have varying decimal places (e.g., USDC has 6, while most tokens have 9).
+///
 /// # Returns
 ///
 /// * `Ok(f64)` - Total liquidity in USD, rounded to 2 decimal places

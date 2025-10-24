@@ -65,16 +65,25 @@ async fn process_pool_with_liquidity(
     println!("Fetched prices - SOL: ${}, Token: ${}", sol_price, token_price);
     
     // Step 5: Calculate liquidity USD
-    // Note: For Raydium, reserve_base is typically coin (like SOL), reserve_quote is PC
-    // For PumpFun, it's similar convention
+    // Important: DEX conventions vary, but typically:
+    // - PumpFun: reserve_base = token, reserve_quote = SOL
+    // - Raydium: reserve_base = coin (often token), reserve_quote = PC (often SOL)
+    // The calculate_liquidity_usd function expects:
+    //   (sol_reserves, token_reserves, sol_price, token_price, token_decimals)
+    // So we need to identify which reserve is SOL and which is token
+    
     let liquidity_usd = if sol_price > 0.0 || token_price > 0.0 {
-        // Pass SOL reserves, token reserves, and respective prices
+        // For this example, we assume reserve_quote is SOL and reserve_base is token
+        // In production, you would determine this based on the pool's mint configuration
+        let sol_reserves = reserve_quote;
+        let token_reserves = reserve_base;
+        
         match calculate_liquidity_usd(
-            reserve_quote,      // SOL reserves (quote in many DEXs)
-            reserve_base,       // Token reserves (base)
-            sol_price,
-            token_price,
-            token_decimals,
+            sol_reserves,      // SOL reserves in lamports
+            token_reserves,    // Token reserves in smallest units
+            sol_price,         // SOL price in USD
+            token_price,       // Token price in USD
+            token_decimals,    // Token decimals (SOL uses hardcoded 9 in function)
         ) {
             Ok(liquidity) => {
                 println!("Calculated liquidity: ${:.2}", liquidity);
