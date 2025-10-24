@@ -9,3 +9,5 @@ solana-sdk = "1.18"
 csv = "1.3"
 thiserror = "1.0"
 toml = "0.8"
+bytemuck = { version = "1.14", features = ["derive"] }
+arrayref = "0.3"
