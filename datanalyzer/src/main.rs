@@ -1,4 +1,5 @@
 mod config;
+mod dex;
 mod error;
 mod models;
 
