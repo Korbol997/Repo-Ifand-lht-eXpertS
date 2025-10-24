@@ -228,6 +228,50 @@ pub struct AmmInfo {
 unsafe impl Zeroable for AmmInfo {}
 unsafe impl Pod for AmmInfo {}
 
+/// Helper structure to hold vault account information from AmmInfo.
+///
+/// This provides a convenient way to extract and work with vault pubkeys
+/// without having to deal with the packed AmmInfo structure directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VaultInfo {
+    /// Pubkey of the SPL token account holding coin/base reserves
+    pub coin_vault: Pubkey,
+    /// Pubkey of the SPL token account holding PC/quote reserves
+    pub pc_vault: Pubkey,
+    /// Mint address of the coin/base token
+    pub coin_mint: Pubkey,
+    /// Mint address of the PC/quote token
+    pub pc_mint: Pubkey,
+}
+
+impl VaultInfo {
+    /// Extract vault information from AmmInfo structure.
+    ///
+    /// # Arguments
+    ///
+    /// * `amm_info` - Reference to deserialized AmmInfo
+    ///
+    /// # Returns
+    ///
+    /// VaultInfo containing the vault pubkeys
+    pub fn from_amm_info(amm_info: &AmmInfo) -> Self {
+        Self {
+            coin_vault: amm_info.coin_vault,
+            pc_vault: amm_info.pc_vault,
+            coin_mint: amm_info.coin_vault_mint,
+            pc_mint: amm_info.pc_vault_mint,
+        }
+    }
+
+    /// Format vault information as a string for display/logging.
+    pub fn display(&self) -> String {
+        format!(
+            "Coin vault: {}, PC vault: {}, Coin mint: {}, PC mint: {}",
+            self.coin_vault, self.pc_vault, self.coin_mint, self.pc_mint
+        )
+    }
+}
+
 /// Decoder for Raydium AMM pool accounts.
 ///
 /// This decoder parses Raydium AMM V4 account data to extract vault pubkeys.
@@ -266,6 +310,33 @@ impl RaydiumDecoder {
         bytemuck::try_from_bytes::<AmmInfo>(account_data).map_err(|e| {
             AppError::DecodingError(format!("Failed to deserialize AmmInfo: {}", e))
         })
+    }
+
+    /// Extract vault information from account data.
+    ///
+    /// This is a convenience method that deserializes the AmmInfo and
+    /// extracts just the vault-related pubkeys.
+    ///
+    /// # Arguments
+    ///
+    /// * `account_data` - Raw account data bytes from Solana
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(VaultInfo)` - Vault pubkeys
+    /// * `Err(AppError)` - If data is invalid
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let decoder = RaydiumDecoder;
+    /// let vault_info = decoder.get_vault_info(&account_data)?;
+    /// println!("Coin vault: {}", vault_info.coin_vault);
+    /// ```
+    pub fn get_vault_info(&self, account_data: &[u8]) -> Result<VaultInfo, AppError> {
+        self.validate_account(account_data)?;
+        let amm_info = Self::deserialize_amm_info(account_data)?;
+        Ok(VaultInfo::from_amm_info(amm_info))
     }
 }
 
@@ -587,5 +658,50 @@ mod tests {
         assert_eq!(pc_decimals, 6);
         assert_eq!(trade_fee_num, 25);
         assert_eq!(trade_fee_den, 10000);
+    }
+
+    #[test]
+    fn test_vault_info_extraction() {
+        let data = create_test_amm_info();
+        let decoder = RaydiumDecoder;
+        
+        let vault_info = decoder.get_vault_info(&data).unwrap();
+        
+        // Verify vault info is extracted correctly
+        assert_ne!(vault_info.coin_vault, Pubkey::default());
+        assert_ne!(vault_info.pc_vault, Pubkey::default());
+        assert_ne!(vault_info.coin_mint, Pubkey::default());
+        assert_ne!(vault_info.pc_mint, Pubkey::default());
+    }
+
+    #[test]
+    fn test_vault_info_display() {
+        let vault_info = VaultInfo {
+            coin_vault: Pubkey::new_unique(),
+            pc_vault: Pubkey::new_unique(),
+            coin_mint: Pubkey::new_unique(),
+            pc_mint: Pubkey::new_unique(),
+        };
+        
+        let display = vault_info.display();
+        assert!(display.contains("Coin vault:"));
+        assert!(display.contains("PC vault:"));
+        assert!(display.contains("Coin mint:"));
+        assert!(display.contains("PC mint:"));
+    }
+
+    #[test]
+    fn test_vault_info_from_amm_info() {
+        let data = create_test_amm_info();
+        let amm_info = RaydiumDecoder::deserialize_amm_info(&data).unwrap();
+        
+        let vault_info = VaultInfo::from_amm_info(amm_info);
+        
+        // Copy values from packed struct
+        let coin_vault = amm_info.coin_vault;
+        let pc_vault = amm_info.pc_vault;
+        
+        assert_eq!(vault_info.coin_vault, coin_vault);
+        assert_eq!(vault_info.pc_vault, pc_vault);
     }
 }
