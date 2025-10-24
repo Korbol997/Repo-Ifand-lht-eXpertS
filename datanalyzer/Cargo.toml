@@ -16,3 +16,6 @@ arrayref = "0.3"
 log = "0.4"
 chrono = "0.4"
 futures-util = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1.13", features = ["full", "test-util"] }

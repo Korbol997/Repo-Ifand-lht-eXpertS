@@ -5,7 +5,9 @@
 pub mod config;
 pub mod dex;
 pub mod error;
+pub mod liquidity;
 pub mod models;
+pub mod price_fetcher;
 pub mod websocket;
 
 // Re-export commonly used types
