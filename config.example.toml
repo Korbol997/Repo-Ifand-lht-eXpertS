@@ -1,0 +1,83 @@
+# Solana DEX Pool Monitor Configuration
+# This file contains the configuration for monitoring liquidity pools on Solana DEXs
+
+# ============================================================================
+# RPC CONFIGURATION
+# ============================================================================
+
+# Solana RPC HTTP endpoint URL
+# Replace YOUR_API_KEY with your actual API key from providers like:
+# - Alchemy: https://www.alchemy.com/
+# - Helius: https://www.helius.dev/
+# - QuickNode: https://www.quicknode.com/
+# - Or use public endpoint (not recommended for production): https://api.mainnet-beta.solana.com
+rpc_url = "https://solana-mainnet.g.alchemy.com/v2/YOUR_API_KEY"
+
+# Solana RPC WebSocket endpoint URL
+# WebSocket endpoint for real-time updates
+# Must use wss:// protocol for secure connections
+rpc_ws_url = "wss://solana-mainnet.g.alchemy.com/v2/YOUR_API_KEY"
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
+
+# Directory where CSV snapshot files will be saved
+# The directory will be created if it doesn't exist
+# Relative paths are resolved from the current working directory
+output_dir = "./snapshots"
+
+# ============================================================================
+# SNAPSHOT CONFIGURATION
+# ============================================================================
+
+# Interval between snapshots in milliseconds
+# Minimum value: 100ms
+# Recommended values:
+#   - For high-frequency monitoring: 1000-5000ms (1-5 seconds)
+#   - For normal monitoring: 5000-30000ms (5-30 seconds)
+#   - For low-frequency monitoring: 60000ms+ (1+ minutes)
+snapshot_interval_ms = 5000
+
+# ============================================================================
+# POOL CONFIGURATION
+# ============================================================================
+
+# List of liquidity pools to monitor
+# Each pool requires:
+#   - pool_address: The on-chain address of the liquidity pool
+#   - dex_type: The DEX platform (either "raydium" or "pumpfun")
+#   - token_mint: The address of the token being traded in the pool
+
+# Example 1: Raydium Pool
+# Raydium pool addresses can be found at:
+#   - Raydium UI: https://raydium.io/liquidity/
+#   - Solscan: https://solscan.io/ (search for the token and find its Raydium pool)
+#   - DexScreener: https://dexscreener.com/solana (filter by Raydium)
+[[pools]]
+pool_address = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2"
+dex_type = "raydium"
+token_mint = "So11111111111111111111111111111111111111112"
+
+# Example 2: Another Raydium Pool
+# This is an example of monitoring a different token on Raydium
+# [[pools]]
+# pool_address = "7XawhbbxtsRcQA8KTkHT9f9nc6d69UwqCDh6U5EEbEmX"
+# dex_type = "raydium"
+# token_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+# Example 3: PumpFun Pool
+# PumpFun pool addresses can be found at:
+#   - PumpFun UI: https://pump.fun/
+#   - Look for the bonding curve address in the token's details
+#   - DexScreener: https://dexscreener.com/solana (filter by PumpFun)
+# [[pools]]
+# pool_address = "9fBJXx7YqxQKDxFLqzBKLh4dM1K4s6UDQ8FvKuB7pXBP"
+# dex_type = "pumpfun"
+# token_mint = "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R"
+
+# Note: To add more pools, simply duplicate the [[pools]] section and update the values
+# You can monitor as many pools as needed, but keep in mind:
+#   - More pools = more RPC requests
+#   - Ensure your RPC provider's rate limits can handle the load
+#   - Each pool will generate its own CSV file in the output directory
