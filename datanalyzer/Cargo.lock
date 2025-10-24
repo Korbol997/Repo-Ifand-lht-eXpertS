@@ -1032,6 +1032,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "csv",
+ "futures-util",
  "log",
  "serde",
  "solana-client",

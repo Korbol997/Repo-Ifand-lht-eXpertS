@@ -2,8 +2,6 @@ use crate::config::PoolConfig;
 use crate::error::AppError;
 use solana_client::nonblocking::pubsub_client::PubsubClient;
 use solana_client::rpc_config::RpcAccountInfoConfig;
-use solana_client::rpc_response::{Response, RpcKeyedAccount};
-use solana_sdk::account::Account;
 use solana_sdk::commitment_config::CommitmentConfig;
 use solana_sdk::pubkey::Pubkey;
 use std::collections::HashMap;
@@ -12,7 +10,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 /// Callback function type for processing account updates
-pub type AccountUpdateCallback = Arc<dyn Fn(Pubkey, Vec<u8>, u64) + Send + Sync>;
+pub type AccountUpdateCallback = Arc<dyn Fn(Pubkey, Vec<u8>, u64) + Send + Sync + 'static>;
 
 /// WebSocket manager for subscribing to Solana account updates
 pub struct WebSocketManager {
@@ -139,6 +137,139 @@ impl WebSocketManager {
             self.subscribe_pool(*pool.pool_address()).await?;
         }
         log::info!("Successfully subscribed to {} pools", pools.len());
+        Ok(())
+    }
+
+    /// Listen to account updates for a single pool
+    ///
+    /// This method spawns a background task that listens to account updates for the specified pool.
+    /// The callback is invoked for each update, after throttling is applied.
+    ///
+    /// # Arguments
+    ///
+    /// * `pool_address` - The pool address to listen to
+    /// * `callback` - Callback function to process account updates (pool_address, account_data, slot)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If listener task was spawned successfully
+    /// * `Err(AppError)` - If subscription failed or client not connected
+    pub async fn listen_pool(
+        &self,
+        pool_address: Pubkey,
+        callback: AccountUpdateCallback,
+    ) -> Result<(), AppError> {
+        // Clone everything we need from self FIRST
+        let client = Arc::clone(self.client.as_ref()
+            .ok_or_else(|| AppError::RpcError("Not connected. Call connect() first.".to_string()))?);
+        let last_snapshot_time = Arc::clone(&self.last_snapshot_time);
+        let skipped_notifications = Arc::clone(&self.skipped_notifications);
+        let snapshot_interval_ms = self.snapshot_interval_ms;
+        
+        // Spawn a task to create subscription and listen to the stream
+        tokio::spawn(async move {
+            use futures_util::StreamExt;
+            
+            let config = RpcAccountInfoConfig {
+                encoding: None,
+                commitment: Some(CommitmentConfig::confirmed()),
+                data_slice: None,
+                min_context_slot: None,
+            };
+            
+            let subscription_result = client.account_subscribe(&pool_address, Some(config)).await;
+            
+            let (mut stream, _unsubscribe) = match subscription_result {
+                Ok(sub) => sub,
+                Err(e) => {
+                    log::error!("Failed to subscribe to pool {}: {}", pool_address, e);
+                    return;
+                }
+            };
+            
+            log::info!("Started listening to pool {}", pool_address);
+            
+            while let Some(update) = stream.next().await {
+                let slot = update.context.slot;
+                
+                // Check throttling
+                let should_process = if snapshot_interval_ms == 0 {
+                    true
+                } else {
+                    let mut last_times = last_snapshot_time.lock().await;
+                    let now = Instant::now();
+                    
+                    let should_process = if let Some(last_time) = last_times.get(&pool_address) {
+                        let elapsed = now.duration_since(*last_time);
+                        let threshold = Duration::from_millis(snapshot_interval_ms);
+                        
+                        if elapsed < threshold {
+                            let mut skipped = skipped_notifications.lock().await;
+                            *skipped.entry(pool_address).or_insert(0) += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    };
+                    
+                    if should_process {
+                        last_times.insert(pool_address, now);
+                    }
+                    
+                    should_process
+                };
+                
+                if should_process {
+                    // Extract account data
+                    if let Some(account) = update.value.data.decode() {
+                        callback(pool_address, account.to_vec(), slot);
+                    } else {
+                        log::warn!("Failed to decode account data for pool {}", pool_address);
+                    }
+                }
+            }
+            
+            log::warn!("Stopped listening to pool {} - connection lost or stream ended", pool_address);
+        });
+        
+        Ok(())
+    }
+
+    /// Listen to account updates for multiple pools
+    ///
+    /// This spawns background tasks for each pool to listen to their account updates.
+    /// Each task runs in an infinite loop with timeout handling for disconnect detection.
+    ///
+    /// # Arguments
+    ///
+    /// * `pools` - Slice of pool addresses to listen to
+    /// * `callback` - Callback function to process account updates
+    /// * `disconnect_timeout_secs` - Seconds without data before assuming disconnect (e.g., 30)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - If all listener tasks were spawned successfully
+    /// * `Err(AppError)` - If any subscription failed
+    pub async fn listen(
+        &self,
+        pools: &[Pubkey],
+        callback: AccountUpdateCallback,
+        disconnect_timeout_secs: u64,
+    ) -> Result<(), AppError> {
+        for pool in pools {
+            // Clone the callback Arc for each pool
+            let pool_callback = Arc::clone(&callback);
+            self.listen_pool(*pool, pool_callback).await?;
+        }
+        
+        log::info!(
+            "Started listening to {} pools with {}s disconnect timeout",
+            pools.len(),
+            disconnect_timeout_secs
+        );
+        
         Ok(())
     }
 

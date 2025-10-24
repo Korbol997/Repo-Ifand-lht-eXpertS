@@ -15,3 +15,4 @@ bytemuck = { version = "1.14", features = ["derive"] }
 arrayref = "0.3"
 log = "0.4"
 chrono = "0.4"
+futures-util = "0.3"
