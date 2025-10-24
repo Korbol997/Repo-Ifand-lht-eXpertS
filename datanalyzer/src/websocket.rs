@@ -1,3 +1,47 @@
+//! WebSocket Manager for Solana Account Subscriptions
+//!
+//! This module provides a WebSocket manager for subscribing to and monitoring
+//! Solana account updates in real-time. It includes features like:
+//!
+//! - Connection management with timeout
+//! - Pool subscription and multi-pool support
+//! - Configurable throttling to limit notification frequency
+//! - Statistics tracking for skipped notifications
+//! - Automatic reconnection handling via stream closure detection
+//!
+//! # Example Usage
+//!
+//! ```no_run
+//! use datanalyzer::websocket::WebSocketManager;
+//! use datanalyzer::config::PoolConfig;
+//! use solana_sdk::pubkey::Pubkey;
+//! use std::sync::Arc;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create a WebSocket manager with 1-second throttling
+//! let mut manager = WebSocketManager::new(
+//!     "wss://api.mainnet-beta.solana.com".to_string(),
+//!     1000  // 1 second minimum between snapshots
+//! );
+//!
+//! // Connect to the WebSocket endpoint
+//! manager.connect().await?;
+//!
+//! // Define a callback to process account updates
+//! let callback = Arc::new(|pool: Pubkey, data: Vec<u8>, slot: u64| {
+//!     println!("Pool {} updated at slot {}, data size: {}", pool, slot, data.len());
+//! });
+//!
+//! // Listen to multiple pools
+//! let pools = vec![Pubkey::new_unique(), Pubkey::new_unique()];
+//! manager.listen(&pools, callback, 30).await?;
+//!
+//! // Log statistics about throttled notifications
+//! manager.log_skipped_stats().await;
+//! # Ok(())
+//! # }
+//! ```
+
 use crate::config::PoolConfig;
 use crate::error::AppError;
 use solana_client::nonblocking::pubsub_client::PubsubClient;
@@ -455,5 +499,71 @@ mod tests {
         
         let result = manager.connect().await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_callback_type_compiles() {
+        // Test that we can create a callback with the correct type
+        let _callback: AccountUpdateCallback = Arc::new(|pool, data, slot| {
+            // Simple callback that just prints
+            println!("Pool: {}, Data size: {}, Slot: {}", pool, data.len(), slot);
+        });
+    }
+
+    #[tokio::test]
+    async fn test_listen_without_connection() {
+        let manager = WebSocketManager::new("wss://api.mainnet-beta.solana.com".to_string(), 1000);
+        let callback: AccountUpdateCallback = Arc::new(|_pool, _data, _slot| {});
+        
+        let pools = vec![Pubkey::new_unique()];
+        let result = manager.listen(&pools, callback, 30).await;
+        
+        // Should fail because not connected
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_multiple_pool_throttling() {
+        let manager = WebSocketManager::new("wss://api.mainnet-beta.solana.com".to_string(), 100);
+        
+        let pool1 = Pubkey::new_unique();
+        let pool2 = Pubkey::new_unique();
+        
+        // Both pools should process first notification
+        assert!(manager.should_process_notification(&pool1).await);
+        assert!(manager.should_process_notification(&pool2).await);
+        
+        // Both should be throttled immediately after
+        assert!(!manager.should_process_notification(&pool1).await);
+        assert!(!manager.should_process_notification(&pool2).await);
+        
+        // Wait and check that both can process again
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert!(manager.should_process_notification(&pool1).await);
+        assert!(manager.should_process_notification(&pool2).await);
+    }
+
+    #[tokio::test]
+    async fn test_get_skipped_stats_for_multiple_pools() {
+        let manager = WebSocketManager::new("wss://api.mainnet-beta.solana.com".to_string(), 100);
+        
+        let pool1 = Pubkey::new_unique();
+        let pool2 = Pubkey::new_unique();
+        
+        // Process first, then skip some for pool1
+        manager.should_process_notification(&pool1).await;
+        for _ in 0..3 {
+            manager.should_process_notification(&pool1).await;
+        }
+        
+        // Process first, then skip some for pool2
+        manager.should_process_notification(&pool2).await;
+        for _ in 0..5 {
+            manager.should_process_notification(&pool2).await;
+        }
+        
+        let skipped = manager.skipped_notifications.lock().await;
+        assert_eq!(skipped.get(&pool1), Some(&3));
+        assert_eq!(skipped.get(&pool2), Some(&5));
     }
 }
