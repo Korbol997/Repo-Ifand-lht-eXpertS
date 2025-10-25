@@ -1032,6 +1032,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "csv",
+ "env_logger",
  "futures-util",
  "log",
  "reqwest",

@@ -48,6 +48,7 @@ pub struct PoolSnapshot {
     pub reserve_quote: u64,
     pub timestamp: i64,
     pub price: f64,
+    pub liquidity_usd: Option<f64>,
 }
 
 impl PoolSnapshot {
@@ -60,12 +61,9 @@ impl PoolSnapshot {
         timestamp: i64,
         price: f64,
     ) -> Result<Self, AppError> {
-        if reserve_base == 0 || reserve_quote == 0 {
-            return Err(AppError::ConfigError(
-                "Reserves cannot be zero".to_string(),
-            ));
-        }
-
+        // Note: Zero reserves are now valid (empty pool state)
+        // Validation removed to allow zero reserves per Task 10.3
+        
         Ok(PoolSnapshot {
             pool_address,
             token_mint,
@@ -74,11 +72,35 @@ impl PoolSnapshot {
             reserve_quote,
             timestamp,
             price,
+            liquidity_usd: None,
+        })
+    }
+
+    /// Create a new snapshot with liquidity information
+    pub fn with_liquidity(
+        pool_address: String,
+        token_mint: String,
+        dex_type: DexType,
+        reserve_base: u64,
+        reserve_quote: u64,
+        timestamp: i64,
+        price: f64,
+        liquidity_usd: f64,
+    ) -> Result<Self, AppError> {
+        Ok(PoolSnapshot {
+            pool_address,
+            token_mint,
+            dex_type,
+            reserve_base,
+            reserve_quote,
+            timestamp,
+            price,
+            liquidity_usd: Some(liquidity_usd),
         })
     }
 
     pub fn to_csv_row(&self) -> Vec<String> {
-        vec![
+        let mut row = vec![
             self.pool_address.clone(),
             self.token_mint.clone(),
             self.dex_type.to_string(),
@@ -86,7 +108,16 @@ impl PoolSnapshot {
             self.reserve_quote.to_string(),
             self.timestamp.to_string(),
             self.price.to_string(),
-        ]
+        ];
+        
+        // Add liquidity_usd if present
+        if let Some(liquidity) = self.liquidity_usd {
+            row.push(format!("{:.2}", liquidity));
+        } else {
+            row.push(String::new());
+        }
+        
+        row
     }
 }
 
@@ -119,6 +150,7 @@ mod tests {
 
     #[test]
     fn test_pool_snapshot_validation() {
+        // Zero reserves are now allowed (valid empty pool state per Task 10.3)
         let result = PoolSnapshot::new(
             "pool123".to_string(),
             "token456".to_string(),
@@ -128,7 +160,7 @@ mod tests {
             1234567890,
             1.5,
         );
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
         let result = PoolSnapshot::new(
             "pool123".to_string(),
@@ -139,7 +171,7 @@ mod tests {
             1234567890,
             1.5,
         );
-        assert!(result.is_err());
+        assert!(result.is_ok());
 
         let result = PoolSnapshot::new(
             "pool123".to_string(),
@@ -167,7 +199,7 @@ mod tests {
         .unwrap();
 
         let csv_row = snapshot.to_csv_row();
-        assert_eq!(csv_row.len(), 7);
+        assert_eq!(csv_row.len(), 8);  // Updated to 8 to include liquidity_usd
         assert_eq!(csv_row[0], "pool123");
         assert_eq!(csv_row[1], "token456");
         assert_eq!(csv_row[2], "PumpFun");
@@ -175,5 +207,28 @@ mod tests {
         assert_eq!(csv_row[4], "2000");
         assert_eq!(csv_row[5], "1234567890");
         assert_eq!(csv_row[6], "0.5");
+        assert_eq!(csv_row[7], "");  // liquidity_usd is None
+    }
+
+    #[test]
+    fn test_pool_snapshot_with_liquidity() {
+        let snapshot = PoolSnapshot::with_liquidity(
+            "pool123".to_string(),
+            "token456".to_string(),
+            DexType::PumpFun,
+            1000,
+            2000,
+            1234567890,
+            0.5,
+            1500.75,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.liquidity_usd, Some(1500.75));
+
+        let csv_row = snapshot.to_csv_row();
+        assert_eq!(csv_row.len(), 8);
+        assert_eq!(csv_row[7], "1500.75");
     }
 }
+
