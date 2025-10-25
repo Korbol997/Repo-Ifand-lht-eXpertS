@@ -14,4 +14,5 @@ pub mod websocket;
 pub use dex::{create_decoder, DexDecoder, DecoderRegistry, DecoderStats};
 pub use error::AppError;
 pub use models::{DexType, PoolSnapshot};
+pub use price_fetcher::{PriceFetcher, CachedPrice, PriceFetcherMetrics};
 pub use websocket::WebSocketManager;
